@@ -3,12 +3,12 @@ name: Build, Push & Make Public Docker Image
 on:
   push:
     branches: [main]
-    tags: [ 'v*.*.*' ]  # Trigger on semver tags too
+    tags: ['v*.*.*']  # Trigger on semver tags too
 
 permissions:
   contents: read
   packages: write
-  id-token: write  # needed for GitHub API auth
+  id-token: write
 
 jobs:
   build-and-publish:
@@ -32,18 +32,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FULL_IMAGE }}
+
       - name: Build and push Docker image
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          if [ "$TAG" = "" ]; then
-            TAG=latest
-          fi
-          docker build -t $FULL_IMAGE:$TAG .
-          docker push $FULL_IMAGE:$TAG
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Make GHCR image public
-        uses: stefanzweifel/github-actions-ghcr-public@v1
-        with:
-          package_name: ${{ env.IMAGE_NAME }}
-          package_version: ${{ github.ref_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE_NAME: ${{ github.repository }}
+          PACKAGE_VERSION: ${{ github.ref_name }}
+        run: |
+          REPO_NAME=$(echo "$PACKAGE_NAME" | cut -d/ -f2)
+          VERSION_ID=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/$OWNER/packages/container/$REPO_NAME/versions" | \
+            jq -r --arg version "$PACKAGE_VERSION" '.[] | select(.metadata.container.tags[] == $version) | .id' | head -n1)
+
+          if [ -z "$VERSION_ID" ]; then
+            echo "Could not find package version ID for $PACKAGE_VERSION"
+            exit 1
+          fi
+
+          curl -X PATCH -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"visibility":"public"}' \
+            "https://api.github.com/orgs/$OWNER/packages/container/$REPO_NAME/versions/$VERSION_ID"
