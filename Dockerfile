@@ -46,7 +46,8 @@ RUN git clone https://github.com/realm/SwiftLint.git && \
 WORKDIR /opt/SwiftLint
 RUN swift package update
 
-ARG SWIFT_FLAGS="-c release -Xswiftc -static-stdlib -Xlinker -lCFURLSessionInterface -Xlinker -lCFXMLInterface -Xlinker -lcurl -Xlinker -lxml2 -Xswiftc -I. -Xlinker -fuse-ld=lld -Xlinker -L/usr/lib/swift/linux"
+ARG SWIFT_FLAGS="-c release -Xswiftc -static-stdlib -Xlinker -lcurl -Xlinker -lxml2 -Xswiftc -I. -Xlinker -fuse-ld=lld -Xlinker -L/usr/lib/swift/linux"
+#ARG SWIFT_FLAGS="-c release -Xswiftc -static-stdlib -Xlinker -lCFURLSessionInterface -Xlinker -lCFXMLInterface -Xlinker -lcurl -Xlinker -lxml2 -Xswiftc -I. -Xlinker -fuse-ld=lld -Xlinker -L/usr/lib/swift/linux"
 RUN swift build $SWIFT_FLAGS --product swiftlint
 RUN install -v `swift build $SWIFT_FLAGS --show-bin-path`/swiftlint /usr/local/bin
 
